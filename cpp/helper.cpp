@@ -998,3 +998,207 @@ std::vector<std::string> chunkText(const std::string& text, int max_len) {
     
     return chunks;
 }
+
+// ============================================================================
+// PDF text extraction
+// ============================================================================
+
+std::string cleanFootnotes(const std::string& text) {
+    std::string result = text;
+    
+    // 1. Remove separator lines (-------- or ________)
+    // Match lines with 3+ consecutive dashes or underscores
+    std::regex separator_lines("^[_-]{3,}\\s*$", std::regex::multiline);
+    result = std::regex_replace(result, separator_lines, "");
+    
+    // 2. Remove "References" sections (typically at end of academic papers)
+    // Match "References" heading and everything after it
+    std::regex references_section(
+        "\\n\\s*References?\\s*\\n[\\s\\S]*",
+        std::regex::icase
+    );
+    result = std::regex_replace(result, references_section, "");
+    
+    // 3. Remove "Bibliography" sections
+    std::regex bibliography_section(
+        "\\n\\s*Bibliography\\s*\\n[\\s\\S]*",
+        std::regex::icase
+    );
+    result = std::regex_replace(result, bibliography_section, "");
+    
+    // 4. Remove lines that look like footnote numbers (e.g., "1 ", "2 ", etc. at start of line)
+    // Only remove if they're followed by lowercase text (typical footnote pattern)
+    std::regex footnote_numbers("^\\s*[0-9]{1,3}\\s+(?=[a-z])", std::regex::multiline);
+    result = std::regex_replace(result, footnote_numbers, "");
+    
+    // 5. Remove common citation patterns like [1], [2], [3-5]
+    std::regex citations("\\[[0-9]{1,3}(-[0-9]{1,3})?(,\\s*[0-9]{1,3})*\\]");
+    result = std::regex_replace(result, citations, "");
+    
+    // 6. Remove footnote sections that start after a blank line with a number
+    // This catches footnotes that appear at the bottom of pages
+    // Pattern: blank line + number + space + text (typically lowercase)
+    std::regex footnote_section("\\n\\n+([0-9]{1,3})\\s+[a-z][^\\n]{10,}(\\n[^0-9][^\\n]*)*", std::regex::multiline);
+    result = std::regex_replace(result, footnote_section, "\n\n");
+    
+    // 7. Remove lines that are just a number (orphaned footnote markers)
+    std::regex orphan_numbers("^\\s*[0-9]{1,3}\\s*$", std::regex::multiline);
+    result = std::regex_replace(result, orphan_numbers, "");
+    
+    // 8. Remove lines containing copyright symbols
+    std::regex copyright_lines("^.*©.*$", std::regex::multiline);
+    result = std::regex_replace(result, copyright_lines, "");
+    
+    // 9. Remove lines containing DOI
+    std::regex doi_lines("^.*\\bDOI\\b.*$", std::regex::multiline | std::regex::icase);
+    result = std::regex_replace(result, doi_lines, "");
+    
+    // 10. Remove lines containing email addresses
+    std::regex email_lines("^.*\\be-?mail\\s*:.*$", std::regex::multiline | std::regex::icase);
+    result = std::regex_replace(result, email_lines, "");
+    
+    // 11. Remove lines containing URLs (http:// or https://)
+    std::regex url_lines("^.*https?://.*$", std::regex::multiline | std::regex::icase);
+    result = std::regex_replace(result, url_lines, "");
+    
+    // 12. Remove academic affiliation blocks (multiple short lines with institutional keywords)
+    // Pattern: lines containing University, Institute, Department, College, School
+    std::regex affiliation_lines(
+        "^.*(University|Institute|Department|College|School|Faculty)\\s+of\\s+.*$",
+        std::regex::multiline | std::regex::icase
+    );
+    result = std::regex_replace(result, affiliation_lines, "");
+    
+    // Also remove standalone institution names
+    std::regex institution_lines(
+        "^\\s*(University|Institute|College|School|Academy)\\s*,.*$",
+        std::regex::multiline | std::regex::icase
+    );
+    result = std::regex_replace(result, institution_lines, "");
+    
+    // 13. Remove publisher information lines (e.g., "Springer International Publishing")
+    std::regex publisher_lines(
+        "^.*(Publishing|Publisher|Press|Verlag|Editions?).*$",
+        std::regex::multiline | std::regex::icase
+    );
+    result = std::regex_replace(result, publisher_lines, "");
+    
+    // 14. Remove library/series information (e.g., "Synthese Library 376")
+    std::regex series_lines("^.*(Library|Series|Collection)\\s+[0-9]+.*$", std::regex::multiline | std::regex::icase);
+    result = std::regex_replace(result, series_lines, "");
+    
+    // 15. Remove lines with city, country patterns (e.g., "Oxford, UK" or "Thessaloniki, Greece")
+    std::regex location_lines("^\\s*[A-Z][a-z]+,\\s*[A-Z][a-z]+\\s*$", std::regex::multiline);
+    result = std::regex_replace(result, location_lines, "");
+    
+    // 16. Remove lines with author names with initials (e.g., "V.C. Müller" or "J. Smith")
+    // Pattern: 1-3 initials with dots followed by a last name
+    std::regex author_lines("^\\s*[A-Z]\\.[A-Z]?\\.?\\s+[A-Z][a-z]+.*$", std::regex::multiline);
+    result = std::regex_replace(result, author_lines, "");
+    
+    // 17. Remove empty parentheses and surrounding whitespace
+    std::regex empty_parens("\\s*\\(\\s*\\)\\s*");
+    result = std::regex_replace(result, empty_parens, " ");
+    
+    // 18. Remove lines that are just punctuation or very short (likely artifacts)
+    std::regex short_artifact_lines("^\\s*[,;.\\-–—]+\\s*$", std::regex::multiline);
+    result = std::regex_replace(result, short_artifact_lines, "");
+    
+    // 19. Remove standalone editor notation (e.g., "(ed.)" or "ed.")
+    std::regex editor_notation("\\s*\\(\\s*ed\\.?\\s*\\)\\s*|\\s+ed\\.\\s+", std::regex::icase);
+    result = std::regex_replace(result, editor_notation, " ");
+    
+    // 20. Clean up excessive blank lines that may result from removals
+    std::regex multiple_newlines("\\n\\n\\n+");
+    result = std::regex_replace(result, multiple_newlines, "\n\n");
+    
+    // 21. Clean up multiple spaces
+    std::regex multiple_spaces("  +");
+    result = std::regex_replace(result, multiple_spaces, " ");
+    
+    // Trim result
+    result = trim(result);
+    
+    return result;
+}
+
+std::string extractTextFromPDF(
+    const std::string& pdf_path,
+    int first_page,
+    int last_page,
+    const std::string& pdftotext_path,
+    bool remove_footnotes
+) {
+    // Determine pdftotext executable path
+    std::string pdftotext_bin;
+    if (!pdftotext_path.empty()) {
+        pdftotext_bin = pdftotext_path;
+    } else {
+        // Try XPDF_HOME environment variable
+        const char* xpdf_home_env = std::getenv("XPDF_HOME");
+        if (xpdf_home_env) {
+            pdftotext_bin = std::string(xpdf_home_env) + "/bin64/pdftotext";
+        } else {
+            // Default fallback
+            const char* home = std::getenv("HOME");
+            if (home) {
+                pdftotext_bin = std::string(home) + "/xpdf-tools-linux-4.06/bin64/pdftotext";
+            } else {
+                throw std::runtime_error("Cannot determine pdftotext path. Set XPDF_HOME or provide --pdftotext-path");
+            }
+        }
+    }
+    
+    // Build command
+    std::ostringstream cmd;
+    cmd << pdftotext_bin << " -layout";
+    
+    if (first_page > 0) {
+        cmd << " -f " << first_page;
+    }
+    if (last_page > 0) {
+        cmd << " -l " << last_page;
+    }
+    
+    cmd << " \"" << pdf_path << "\" -";  // Output to stdout
+    
+    std::string command = cmd.str();
+    
+    // Execute command and capture output
+    FILE* pipe = popen(command.c_str(), "r");
+    if (!pipe) {
+        throw std::runtime_error("Failed to execute pdftotext: " + command);
+    }
+    
+    std::ostringstream result;
+    char buffer[4096];
+    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        result << buffer;
+    }
+    
+    int status = pclose(pipe);
+    if (status != 0) {
+        throw std::runtime_error("pdftotext failed with exit code " + std::to_string(status) + 
+                                  " for file: " + pdf_path);
+    }
+    
+    std::string text = result.str();
+    
+    // Basic cleanup: remove excessive blank lines
+    std::regex multiple_newlines("\n\n\n+");
+    text = std::regex_replace(text, multiple_newlines, "\n\n");
+    
+    // Trim leading/trailing whitespace
+    text = trim(text);
+    
+    // Apply footnote cleaning if requested
+    if (remove_footnotes) {
+        text = cleanFootnotes(text);
+    }
+    
+    if (text.empty()) {
+        throw std::runtime_error("No text extracted from PDF: " + pdf_path);
+    }
+    
+    return text;
+}

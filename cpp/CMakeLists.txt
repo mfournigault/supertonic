@@ -115,8 +115,27 @@ else()
     )
 endif()
 
+# PDF to Audio executable
+add_executable(pdf_to_audio
+    pdf_to_audio.cpp
+)
+
+if(onnxruntime_FOUND)
+    target_link_libraries(pdf_to_audio
+        tts_helper
+        onnxruntime::onnxruntime
+        nlohmann_json::nlohmann_json
+    )
+else()
+    target_link_libraries(pdf_to_audio
+        tts_helper
+        ${ONNXRUNTIME_LIB}
+        nlohmann_json::nlohmann_json
+    )
+endif()
+
 # Installation
-install(TARGETS example_onnx DESTINATION bin)
+install(TARGETS example_onnx pdf_to_audio DESTINATION bin)
 install(TARGETS tts_helper DESTINATION lib)
 install(FILES helper.h DESTINATION include)
 

@@ -215,6 +215,18 @@ auto timer(const std::string& name, Func&& func) -> decltype(func()) {
     return result;
 }
 
+// Clean footnotes and references from extracted text
+std::string cleanFootnotes(const std::string& text);
+
+// Extract text from PDF using pdftotext
+std::string extractTextFromPDF(
+    const std::string& pdf_path,
+    int first_page = -1,
+    int last_page = -1,
+    const std::string& pdftotext_path = "",
+    bool remove_footnotes = false
+);
+
 // Sanitize filename
 std::string sanitizeFilename(const std::string& text, int max_len);
 
